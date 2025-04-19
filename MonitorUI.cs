@@ -81,7 +81,7 @@ namespace ZenthosClient
             }
 
             // Navigate to the local HTTP server
-            WView2.Source = new Uri("http://localhost:5173/index.html");
+            WView2.Source = new Uri("http://localhost:6578/index.html");
         }
 
         // Start local HTTP server
