@@ -97,7 +97,7 @@ namespace ZenthosClient
                 WView2.CoreWebView2.Settings.IsSwipeNavigationEnabled = false;
             }
 
-            WView2.Source = new Uri("http://localhost:5173/index.html");
+            WView2.Source = new Uri("http://localhost:6578/index.html");
 
             monitor = new ForgroundListener();
             monitor.OnAppChanged += (info, pid) =>
