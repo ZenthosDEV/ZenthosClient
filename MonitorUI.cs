@@ -1,5 +1,4 @@
 using System.Net;
-using System.Security.Cryptography;
 using System.Text;
 using RestSharp;
 using ZenthosClient.Functions;
@@ -13,26 +12,11 @@ namespace ZenthosClient
         private readonly string webAppPath;
         private bool isRunning = false;
         private string logs = string.Empty;
+        private string userString = string.Empty;
 
         public MonitorUI()
         {
             InitializeComponent();
-
-            monitor = new ForgroundListener();
-            monitor.OnAppChanged += (info, pid) =>
-            {
-                Invoke(new Action(async () =>
-                {
-                    await WView2.CoreWebView2.ExecuteScriptAsync($"window.ProcessInfo('{DateTime.Now:T}~{info.Name}~{info.Title}~{pid}')");
-                }));
-
-                if (isRunning) {
-                    logs += $"{DateTime.Now:T} -|- {info.Name} -|- {info.Title} -|- {pid}\n";
-                }
-            };
-
-            monitor.Start();
-
             webAppPath = Path.Combine(Application.StartupPath, "webview");  // Folder containing the web app
             StartHttpServer();
             InitializeWebView();
@@ -40,6 +24,39 @@ namespace ZenthosClient
             this.Resize += MainForm_Resize;
             NotifyIcon.DoubleClick += (s, e) => RestoreFromTray();
             NotifyIcon.ContextMenuStrip = MenuStrip;
+
+            AppDomain.CurrentDomain.ProcessExit += SendExitLog;
+            Application.ApplicationExit += SendExitLog;
+        }
+
+        private async void CommitChanges(string message)
+        {
+            if (isRunning)
+            {
+                string[] parts = message.Split(':');
+                string name = parts[1];
+                string date = parts[2];
+
+                var client = new RestClient($"https://zenthosclientserver.apex-cloud.workers.dev/logs/{name}/{date}");
+                var request = new RestRequest("", Method.Post);
+                request.AddHeader("Content-Type", "text/plain");
+                request.AddStringBody(logs, ContentType.Plain);
+
+                RestResponse response = await client.ExecuteAsync(request);
+                Invoke(new Action(async () =>
+                {
+                    await WView2.CoreWebView2.ExecuteScriptAsync($"window.Ack()");
+                }));
+                logs = string.Empty;
+            }
+        }
+
+        private void SendExitLog(object sender, EventArgs e)
+        {
+            if (!string.IsNullOrEmpty(userString))
+            {
+                CommitChanges(userString);
+            }
         }
 
         private void MainForm_Resize(object sender, EventArgs e)
@@ -74,17 +91,31 @@ namespace ZenthosClient
 
             if (WView2.CoreWebView2 != null)
             {
-                WView2.CoreWebView2.Settings.AreDevToolsEnabled = true;  // Disable DevTools
+                WView2.CoreWebView2.Settings.AreDevToolsEnabled = true;
                 WView2.CoreWebView2.Settings.IsZoomControlEnabled = false;
                 WView2.CoreWebView2.Settings.IsPinchZoomEnabled = false;
                 WView2.CoreWebView2.Settings.IsSwipeNavigationEnabled = false;
             }
 
-            // Navigate to the local HTTP server
-            WView2.Source = new Uri("http://localhost:6578/index.html");
+            WView2.Source = new Uri("http://localhost:5173/index.html");
+
+            monitor = new ForgroundListener();
+            monitor.OnAppChanged += (info, pid) =>
+            {
+                Invoke(new Action(async () =>
+                {
+                    await WView2.CoreWebView2.ExecuteScriptAsync($"window.ProcessInfo('{DateTime.Now:T}~{info.Name}~{info.Title}~{pid}')");
+                }));
+
+                if (isRunning)
+                {
+                    logs += $"{DateTime.Now:T} -|- {info.Name} -|- {info.Title} -|- {pid}\n";
+                }
+            };
+
+            monitor.Start();
         }
 
-        // Start local HTTP server
         private void StartHttpServer()
         {
             listener = new HttpListener();
@@ -178,7 +209,7 @@ namespace ZenthosClient
             base.OnFormClosed(e);
         }
 
-        private async void WView2_WebMessageReceived(object sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+        private void WView2_WebMessageReceived(object sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
         {
             string message = e.TryGetWebMessageAsString();
             if (message == "START")
@@ -188,22 +219,11 @@ namespace ZenthosClient
             else if (message.StartsWith("END"))
             {
                 isRunning = false;
-
-                string[] parts = message.Split(':');
-                string name = parts[1];
-                string date = parts[2];
-
-                var client = new RestClient($"https://zenthosclientserver.apex-cloud.workers.dev/logs/{name}/{date}");
-                var request = new RestRequest("", Method.Post);
-                request.AddHeader("Content-Type", "text/plain");
-                request.AddStringBody(logs, ContentType.Plain);
-
-                RestResponse response = await client.ExecuteAsync(request);
-                Invoke(new Action(async () =>
-                {
-                    await WView2.CoreWebView2.ExecuteScriptAsync($"window.Ack()");
-                }));
-                logs = string.Empty;
+                CommitChanges(message);
+            }
+            else if (message.StartsWith("AUTH"))
+            {
+                userString = message;
             }
         }
     }
