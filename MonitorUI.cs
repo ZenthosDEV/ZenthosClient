@@ -218,8 +218,8 @@ namespace ZenthosClient
             }
             else if (message.StartsWith("END"))
             {
-                isRunning = false;
                 CommitChanges(message);
+                isRunning = false;
             }
             else if (message.StartsWith("AUTH"))
             {
